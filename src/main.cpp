@@ -16,14 +16,16 @@ extern "C"
 #include <libswresample/swresample.h>
 }
 
-const char *chars = " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
-// const char* chars = " .:-=+*#%@";
-const size_t charslen = strlen(chars);
+auto long_charset = " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
+auto short_charset = " .:-=+*#%@";
+const char *chars = long_charset;
+size_t charslen;
 volatile bool stopProgram = false;
 
 static option long_options[] = {
     {"width", optional_argument, nullptr, 'w'},
     {"height", optional_argument, nullptr, 'h'},
+    {"charset", optional_argument, nullptr, 'c'},
     {"file", required_argument, nullptr, 'f'},
     {nullptr, 0, nullptr, 0}};
 
@@ -69,6 +71,7 @@ void SignalHandle(const int signal)
 	stopProgram = true;
 }
 
+// ReSharper disable once CppParameterMayBeConstPtrOrRef
 void DataCallback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount)
 {
 	const auto fifo = static_cast<AVAudioFifo *>(pDevice->pUserData);
@@ -211,6 +214,20 @@ int PlayAudio(const std::string &filepath)
 	return 0;
 }
 
+int PrintHelp(const std::string &program_name, const int ret_val = 0)
+{
+	std::cout << "Usage: " << program_name << " [options]\n"
+	          << "Options:\n"
+	          << "  -w, --width WIDTH   Specify the desired width.\n"
+	          << "  -h, --height HEIGHT Specift the desired height.\n"
+	          << "  -f, --file PATH     Video source file path.\n"
+	          << "  -c, --charset SET   Selects the charset:\n"
+	          << std::format("                         (1) Long charset: {}\n", long_charset)
+	          << std::format("                         (2) Short charset: {}\n", short_charset);
+
+	return ret_val;
+}
+
 int main(const int argc, char **argv)
 {
 	uint32_t width = 130;
@@ -220,7 +237,10 @@ int main(const int argc, char **argv)
 	int opt;
 	int option_index = 0;
 
-	while ((opt = getopt_long(argc, argv, "w:h:f:", long_options, &option_index)) != -1)
+	if (argc <= 1)
+		return PrintHelp(argv[0]);
+
+	while ((opt = getopt_long(argc, argv, "w:h:f:c:", long_options, &option_index)) != -1)
 	{
 		switch (opt)
 		{
@@ -232,6 +252,16 @@ int main(const int argc, char **argv)
 			break;
 		case 'f':
 			filepath = std::string(optarg);
+			break;
+		case 'c':
+		{
+			if (const int chrset_opt = std::stoi(optarg); chrset_opt == 1)
+				chars = long_charset;
+			else if (chrset_opt == 2)
+				chars = short_charset;
+			else
+				return PrintHelp(argv[0], 1);
+		}
 		default:;
 		}
 	}
@@ -241,7 +271,7 @@ int main(const int argc, char **argv)
 
 	cv::utils::logging::setLogLevel(cv::utils::logging::LogLevel::LOG_LEVEL_SILENT);
 
-	auto audio_thread = std::thread(&PlayAudio, filepath);
+	charslen = strlen(chars);
 
 	std::cout << std::format("Using video: {}\n", filepath);
 
@@ -258,6 +288,8 @@ int main(const int argc, char **argv)
 	const auto fps = cap.get(cv::CAP_PROP_FPS);
 
 	Timer timer(fps);
+
+	auto audio_thread = std::thread(&PlayAudio, filepath);
 
 	printf("\033[2J\033[H");
 	fflush(stdout);
